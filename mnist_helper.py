@@ -51,3 +51,17 @@ def show(image):
     ax.xaxis.set_ticks_position('top')
     ax.yaxis.set_ticks_position('left')
     pyplot.show()
+
+def flatten_image(img):
+    # Given an image, return a vector representing its pixels.
+    return [px for row in img for px in row]
+
+def flatten_X(X):
+    # Given a dataset, flatten its images into one-dimensional vectors.
+    return [flatten_image(img) for img in X]
+
+def one_hot(Y):
+    hot = np.zeros((len(Y), 10))
+    for i in range(len(Y)):
+        hot[i][Y[i]] = 1
+    return hot
