@@ -51,13 +51,23 @@ def build_network(X):
     return l4
 
 
-def get_cost(log, lab):
+def l2norm(log):
+    #log: output layer of the neural net
+    return tf.sqrt(tf.reduce_sum(tf.square(log)))
+
+
+def get_cost(log, lab, lambd=0):
     # log: output layer of the neural net
     # lab: example labels
-    return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=log, labels=lab)) 
+    # lambda: regularization coefficient
+    m = tf.shape(log)[0]
+    cross_entropy_term = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=log, labels=lab)) 
+    reg_coef = tf.cast(tf.divide(lambd, 2*m), tf.float32)
+    reg_term = tf.multiply(reg_coef, l2norm(log))
+    return cross_entropy_term + reg_term
 
 
-def fit_model(X_train, Y_train, X_test, Y_test, minibatch_size=256, num_epochs=50, learning_rate=0.001, test=True):
+def fit_model(X_train, Y_train, X_test, Y_test, num_epochs=50, lambd=1, learning_rate=0.001, minibatch_size=256, test=True):
     seed = 1
 
     X_train = np.array(X_train)
@@ -67,7 +77,7 @@ def fit_model(X_train, Y_train, X_test, Y_test, minibatch_size=256, num_epochs=5
     Y = tf.placeholder(tf.float32, shape=[None, 10], name="Y")
 
     pred = build_network(X)
-    cost = get_cost(pred, Y)
+    cost = get_cost(pred, Y, lambd=lambd)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost) 
 
     with tf.Session() as sess:
@@ -89,13 +99,19 @@ def fit_model(X_train, Y_train, X_test, Y_test, minibatch_size=256, num_epochs=5
                 epoch_cost += minibatch_cost
 
             epoch_cost /= num_minibatches
-            _, acc = sess.run([optimizer, correct_pct], feed_dict={X:X_train, Y:Y_train})
+            _, train_acc = sess.run([optimizer, correct_pct], feed_dict={X:X_train, Y:Y_train})
 
-            print("epoch {}: cost={}, accuracy={}%".format(epoch, epoch_cost, acc))
+            print("epoch {}: cost={}, accuracy={}%".format(epoch, epoch_cost, train_acc))
 
-        print("final cost={}".format(cost))
-        print("final accuracy: {}%".format(acc))
+        print("training cost={}".format(epoch_cost))
+        print("training accuracy: {}%".format(train_acc))
+
+        if(test):
+            _, test_acc = sess.run([optimizer, correct_pct], feed_dict={X:X_test, Y:Y_test})
+            print("testing accuracy: {}%".format(test_acc))
 
 
-fit_model(X_train, Y_train, X_test, Y_test)
+
+
+fit_model(X_train, Y_train, X_test, Y_test, num_epochs=20, lambd=5)
 
