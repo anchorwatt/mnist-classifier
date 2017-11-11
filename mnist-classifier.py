@@ -131,4 +131,4 @@ def fit_model(X_train, Y_train, num_epochs=10, lambd=0, learning_rate=0.001, min
             print("")
 
 
-fit_model(X_train, Y_train, num_epochs=25, lambd=1)
+fit_model(X_train, Y_train, num_epochs=20, lambd=1)
