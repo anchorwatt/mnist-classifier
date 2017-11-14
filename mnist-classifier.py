@@ -5,7 +5,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 import tensorflow as tf
-from mnist_helper import read, one_hot, flatten_X
+from mnist_helper import *
 
 print("importing data")
 train_data = list(read(dataset="training", path="images/"))
@@ -17,79 +17,66 @@ Y_train = one_hot([pair[0] for pair in train_data[0:50000]])
 Y_dev = one_hot([pair[0] for pair in train_data[50000:60000]])
 Y_test = one_hot([pair[0] for pair in test_data])
 
-
-X_train = flatten_X([pair[1] for pair in train_data[0:50000]])
-X_dev = flatten_X([pair[1] for pair in train_data[50000:60000]])
-X_test = flatten_X([pair[1] for pair in test_data])
-
-
-def get_layer(X, num_units, activation=tf.nn.relu):
-    # X: matrix containing training data of dimension [num_examples, input_length]
-    # input_length: #columns in input matrix
-    # num_units: #columns in output matrix
-    # activation: function applied after matrix multiplication/addition
-    # layer_num: number of layer in the network
-    input_length = X.shape[1]
-    W = tf.get_variable("W", [input_length, num_units], initializer=tf.random_uniform_initializer(minval=-1, maxval=1))
-    b = tf.get_variable("b", [num_units], initializer=tf.zeros_initializer())
-    outputs = tf.add(tf.matmul(X, W), b)
-    if activation is not None:
-        outputs = activation(outputs)
-    mean, var = tf.nn.moments(outputs, [1], keep_dims=True)
-    outputs = tf.divide(tf.subtract(outputs, mean), tf.sqrt(var))
-    return outputs, W, b
+X_train = expand_X([pair[1] for pair in train_data[0:50000]])
+X_dev = expand_X([pair[1] for pair in train_data[50000:60000]])
+X_test = expand_X([pair[1] for pair in test_data])
 
 
-def build_network(X, nodes):
+def build_network(X, lambd=0.1):
     # X: the input matrix
-    # nodes: size of each hidden layer
     print("building network")
-    with tf.variable_scope("layer1"):
-        l1, W1, b1 = get_layer(X, nodes[0])
-    with tf.variable_scope("layer2"):
-        l2, W2, b2 = get_layer(l1, nodes[1])
-    with tf.variable_scope("layer3"):
-        l3, W3, b3 = get_layer(l2, nodes[2])
-    with tf.variable_scope("layer4"):
-        l4, W4, b4 = get_layer(l3, nodes[3], activation=None)
-    weights = [W1, W2, W3, W4]
-    return l4, weights
+
+    regularizer = tf.contrib.layers.l2_regularizer(scale=lambd)
+
+    with tf.variable_scope("conv1"):
+        Z1 = tf.layers.conv2d(X, filters=16, kernel_size=4, strides=1, padding="SAME")
+        A1 = tf.nn.relu(Z1)
+    with tf.variable_scope("pool1"):
+        P1 = tf.layers.max_pooling2d(A1, pool_size=4, strides=4, padding="SAME")
+
+    with tf.variable_scope("conv2"):
+        Z2 = tf.layers.conv2d(P1, filters=32, kernel_size=4, strides=1, padding="SAME")
+        A2 = tf.nn.relu(Z2)
+    with tf.variable_scope("pool2"):
+        P2 = tf.layers.max_pooling2d(A2, pool_size=4, strides=4, padding="SAME")
+
+    """
+    with tf.variable_scope("conv3"):
+        Z3 = tf.layers.conv2d(P2, filters=32, kernel_size=5, strides=1, padding="SAME")
+        A3 = tf.nn.relu(Z3)
+    with tf.variable_scope("pool3"):
+        P3 = tf.layers.max_pooling2d(A3, pool_size=4, strides=4, padding="SAME")
+    """
+    
+    P3 = tf.contrib.layers.flatten(P2)
+    Z4 = tf.contrib.layers.fully_connected(P3, 500, activation_fn=tf.nn.relu, weights_regularizer=regularizer)
+    A4 = tf.nn.relu(Z4)
+
+    Z5 = tf.contrib.layers.fully_connected(A4, 200, activation_fn=tf.nn.relu, weights_regularizer=regularizer)
+    A5 = tf.nn.relu(Z5)
+
+    """
+    Z6 = tf.contrib.layers.fully_connected(A5, 100, activation_fn=tf.nn.relu, weights_regularizer=regularizer)
+    A6 = tf.nn.relu(Z6)
+    """
+
+    pred = tf.contrib.layers.fully_connected(A5, 10, activation_fn=None, weights_regularizer=None)
+    return pred
 
 
-def l2norm(weights):
-    # weights: weight layers of the neural network
-    norm = 0
-    for weight in weights:
-        norm += tf.sqrt(tf.reduce_sum(tf.square(weight)))
-    return norm
-
-
-def get_cost(log, lab, weights, lambd=0):
-    # log: output layer of the neural net
-    # lab: example labels
-    # lambda: regularization coefficient
-    m = tf.shape(log)[0]
-    cross_entropy_term = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=log, labels=lab)) 
-    reg_coef = tf.cast(tf.divide(lambd, 2*m), tf.float32)
-    norm = l2norm(weights)
-    return cross_entropy_term + tf.multiply(reg_coef, norm)
-
-
-def fit_model(X_train, Y_train, num_epochs=10, lambd=0, learning_rate=0.001, minibatch_size=256, dev=True, test=True):
+def fit_model(X_train, Y_train, num_epochs=10, lambd=0, learning_rate=0.005, minibatch_size=256, dev=True, test=True):
     print("fitting model")
 
     X_train = np.array(X_train)
     Y_train = np.array(Y_train)
 
-    X = tf.placeholder(tf.float32, shape=[None, 784], name="X")
+    X = tf.placeholder(tf.float32, shape=[None, 28, 28, 1], name="X")
     Y = tf.placeholder(tf.float32, shape=[None, 10], name="Y")
 
-    nodes = [500, 500, 200, 10]
-
     with tf.variable_scope("mnist"):
-        pred, weights = build_network(X, nodes)
+        pred = build_network(X, lambd=lambd)
         tf.get_variable_scope().reuse_variables()
-        cost = get_cost(pred, Y, weights, lambd=lambd)
+        cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=Y))
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost) 
 
     with tf.Session() as sess:
@@ -131,4 +118,4 @@ def fit_model(X_train, Y_train, num_epochs=10, lambd=0, learning_rate=0.001, min
             print("")
 
 
-fit_model(X_train, Y_train, num_epochs=20, lambd=1)
+fit_model(X_train, Y_train, num_epochs=12, lambd=0.0)
