@@ -143,6 +143,12 @@ def flatten_X(X):
     # Given a dataset, flatten its images into one-dimensional vectors.
     return [flatten_image(img) for img in X]
 
+def expand_X(X):
+    for i in range(len(X)):
+        X[i] = np.array(X[i])
+        X[i] = np.reshape(X[i], [28, 28, 1])
+    return X
+
 def one_hot(Y):
     hot = np.zeros((len(Y), 10))
     for i in range(len(Y)):
